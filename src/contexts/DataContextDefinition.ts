@@ -1,15 +1,19 @@
 import { createContext } from 'react';
-import type { Campaign, Contact, USP, CallLog, AppData } from '../types';
 
 export interface DataContextType {
-  data: AppData;
-  addCampaign: (campaign: Omit<Campaign, 'id' | 'createdAt'>) => void;
-  updateCampaign: (id: string, updates: Partial<Campaign>) => void;
+  data: {
+    campaigns: unknown[];
+    contacts: unknown[];
+    usps: unknown[];
+    callLogs: unknown[];
+  };
+  addCampaign: (campaign: unknown) => void;
+  updateCampaign: (id: string, updates: unknown) => void;
   deleteCampaign: (id: string) => void;
-  addUSP: (usp: Omit<USP, 'id' | 'usageCount' | 'createdAt'>) => void;
-  updateUSP: (id: string, updates: Partial<USP>) => void;
+  addUSP: (usp: unknown) => void;
+  updateUSP: (id: string, updates: unknown) => void;
   deleteUSP: (id: string) => void;
-  addContacts: (contacts: Omit<Contact, 'id' | 'campaigns'>[], campaignId?: string) => void;
+  addContacts: (contacts: unknown[], campaignId?: string) => void;
   runCampaign: (campaignId: string) => void;
 }
 
