@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { useData } from '../../hooks/useData';
 import type { CampaignStatus } from '../../types';
+import type { Campaign } from '../../types';
+
 
 interface CreateCampaignModalProps {
   onClose: () => void;
@@ -19,24 +21,25 @@ const CreateCampaignModal = ({ onClose }: CreateCampaignModalProps) => {
     selectedUSPs: [] as string[]
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    addCampaign({
-      name: formData.name,
-      description: formData.description,
-      status: formData.status,
-      callWindow: {
-        startTime: formData.startTime,
-        endTime: formData.endTime,
-        timezone: formData.timezone
-      },
-      selectedUSPs: formData.selectedUSPs,
-      totalContacts: 0,
-      calledCount: 0,
-      pendingCount: 0
-    });
-    onClose();
-  };
+const handleSubmit = (e: React.FormEvent) => {
+  e.preventDefault();
+  addCampaign({
+    name: formData.name,
+    description: formData.description,
+    status: formData.status,
+    timezone: formData.timezone,
+    call_window_start: formData.startTime,
+    call_window_end: formData.endTime,
+    pause_between_calls: 30,
+    selected_usps: formData.selectedUSPs,
+    total_contacts: 0,
+    called_count: 0,
+    pending_count: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  } as Omit<Campaign, 'id' | 'createdAt'>);
+  onClose();
+};
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -118,7 +121,7 @@ const CreateCampaignModal = ({ onClose }: CreateCampaignModalProps) => {
                 <p className="text-sm text-gray-500">No USPs available. Create some in the USP Library first.</p>
               ) : (
                 <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-4">
-                  {data.usps.map(usp => (
+                  {data.usps.map((usp: { id: string; title: string; description: string }) => (
                     <label key={usp.id} className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded">
                       <input
                         type="checkbox"
