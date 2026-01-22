@@ -69,7 +69,6 @@ const UploadContactsModal = ({ campaignId, onClose }: UploadContactsModalProps) 
         };
       });
 
-      // @ts-expect-error - Type mismatch between Contact interfaces
       addContacts(contacts, campaignId);
       onClose();
     } catch (err) {

@@ -121,26 +121,29 @@ const handleSubmit = (e: React.FormEvent) => {
                 <p className="text-sm text-gray-500">No USPs available. Create some in the USP Library first.</p>
               ) : (
                 <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-4">
-                  {data.usps.map((usp: { id: string; title: string; description: string }) => (
-                    <label key={usp.id} className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded">
-                      <input
-                        type="checkbox"
-                        checked={formData.selectedUSPs.includes(usp.id)}
-                        onChange={e => {
-                          if (e.target.checked) {
-                            setFormData({ ...formData, selectedUSPs: [...formData.selectedUSPs, usp.id] });
-                          } else {
-                            setFormData({ ...formData, selectedUSPs: formData.selectedUSPs.filter(id => id !== usp.id) });
-                          }
-                        }}
-                        className="mt-1"
-                      />
-                      <div>
-                        <div className="font-medium text-gray-900 text-sm">{usp.title}</div>
-                        <div className="text-xs text-gray-500">{usp.description}</div>
-                      </div>
-                    </label>
-                  ))}
+                 {data.usps.map((usp: unknown) => {
+  const u = usp as { id: string; title: string; description: string };
+  return (
+    <label key={u.id} className="flex items-start gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded">
+      <input
+        type="checkbox"
+        checked={formData.selectedUSPs.includes(u.id)}
+        onChange={e => {
+          if (e.target.checked) {
+            setFormData({ ...formData, selectedUSPs: [...formData.selectedUSPs, u.id] });
+          } else {
+            setFormData({ ...formData, selectedUSPs: formData.selectedUSPs.filter(id => id !== u.id) });
+          }
+        }}
+        className="mt-1"
+      />
+      <div>
+        <div className="font-medium text-gray-900 text-sm">{u.title}</div>
+        <div className="text-xs text-gray-500">{u.description}</div>
+      </div>
+    </label>
+  );
+})}
                 </div>
               )}
             </div>
