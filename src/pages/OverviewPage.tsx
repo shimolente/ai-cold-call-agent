@@ -1,120 +1,96 @@
 import { useState, useEffect } from 'react';
-import { Phone, Users, TrendingUp, Calendar, Clock, CheckCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Phone, Users, TrendingUp, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { Campaign, Contact, CallLog } from '../types';
 
-interface CampaignStats {
-  total: number;
-  active: number;
-  paused: number;
-  completed: number;
+interface DashboardStats {
+  totalCampaigns: number;
+  activeCampaigns: number;
+  totalContacts: number;
+  totalCalls: number;
+  pendingCalls: number;
+  completedCalls: number;
 }
 
-interface ContactStats {
-  total: number;
-  called: number;
-  pending: number;
-}
-
-interface CallStats {
-  total: number;
-  positive: number;
-  noInterest: number;
-  followUp: number;
-  conversionRate: number;
+interface CampaignWithContactStats {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  created_at: string;
+  totalContacts: number;
+  pendingContacts: number;
 }
 
 const OverviewPage = () => {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [callLogs, setCallLogs] = useState<CallLog[]>([]);
+  const navigate = useNavigate();
+  const [stats, setStats] = useState<DashboardStats>({
+    totalCampaigns: 0,
+    activeCampaigns: 0,
+    totalContacts: 0,
+    totalCalls: 0,
+    pendingCalls: 0,
+    completedCalls: 0
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchData();
+    fetchDashboardData();
   }, []);
 
-  const fetchData = async () => {
+  const fetchDashboardData = async () => {
     try {
       setLoading(true);
 
-      // Fetch all data in parallel
-      const [campaignsRes, contactsRes, callLogsRes] = await Promise.all([
-        supabase.from('campaigns').select('*').order('created_at', { ascending: false }),
-        supabase.from('contacts').select('*'),
-        supabase.from('call_logs').select('*').order('call_date', { ascending: false }).limit(5)
-      ]);
+      // Fetch campaigns
+      const { data: campaignsData } = await supabase
+        .from('campaigns')
+        .select('status');
 
-      if (campaignsRes.error) throw campaignsRes.error;
-      if (contactsRes.error) throw contactsRes.error;
-      if (callLogsRes.error) throw callLogsRes.error;
+      const totalCampaigns = campaignsData?.length || 0;
+      const activeCampaigns = campaignsData?.filter(c => c.status === 'active').length || 0;
 
-      setCampaigns(campaignsRes.data || []);
-      setContacts(contactsRes.data || []);
-      setCallLogs(callLogsRes.data || []);
+      // Fetch contacts
+      const { data: contactsData } = await supabase
+        .from('contacts')
+        .select('id');
+
+      const totalContacts = contactsData?.length || 0;
+
+      // Fetch campaign_contacts for call stats
+      const { data: campaignContactsData } = await supabase
+        .from('campaign_contacts')
+        .select('status');
+
+      const pendingCalls = campaignContactsData?.filter(cc => cc.status === 'pending').length || 0;
+      const completedCalls = campaignContactsData?.filter(cc => cc.status === 'completed').length || 0;
+
+      // Fetch call logs
+      const { data: callLogsData } = await supabase
+        .from('call_logs')
+        .select('id');
+
+      const totalCalls = callLogsData?.length || 0;
+
+      setStats({
+        totalCampaigns,
+        activeCampaigns,
+        totalContacts,
+        totalCalls,
+        pendingCalls,
+        completedCalls
+      });
     } catch (err) {
-      console.error('Error fetching overview data:', err);
+      console.error('Error fetching dashboard data:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Calculate campaign stats
-  const campaignStats: CampaignStats = {
-    total: campaigns.length,
-    active: campaigns.filter(c => c.status === 'active').length,
-    paused: campaigns.filter(c => c.status === 'paused').length,
-    completed: campaigns.filter(c => c.status === 'completed').length
-  };
-
-  // Calculate contact stats
-  const contactStats: ContactStats = {
-    total: contacts.length,
-    called: contacts.filter(c => c.status === 'completed').length,
-    pending: contacts.filter(c => c.status === 'pending').length
-  };
-
-  // Calculate call stats
-  const allCallLogs = callLogs;
-  const callStats: CallStats = {
-    total: allCallLogs.length,
-    positive: allCallLogs.filter(log => log.intent_label === 'positive').length,
-    noInterest: allCallLogs.filter(log => log.intent_label === 'no-interest').length,
-    followUp: allCallLogs.filter(log => log.intent_label === 'follow-up').length,
-    conversionRate: allCallLogs.length > 0 
-      ? Math.round((allCallLogs.filter(log => log.intent_label === 'positive').length / allCallLogs.length) * 100)
-      : 0
-  };
-
-  // Intent distribution
-  const intentCounts = {
-    positive: callStats.positive,
-    'no-interest': callStats.noInterest,
-    'follow-up': callStats.followUp
-  };
-
-  const getIntentColor = (intent: string) => {
-    switch (intent) {
-      case 'positive': return 'text-green-600 bg-green-100';
-      case 'no-interest': return 'text-red-600 bg-red-100';
-      case 'follow-up': return 'text-yellow-600 bg-yellow-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
-  };
-
-  const getIntentLabel = (intent: string) => {
-    switch (intent) {
-      case 'positive': return 'Positive';
-      case 'no-interest': return 'No Interest';
-      case 'follow-up': return 'Follow-up';
-      default: return intent;
     }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-500">Loading overview...</div>
+        <div className="text-gray-500">Loading dashboard...</div>
       </div>
     );
   }
@@ -123,199 +99,188 @@ const OverviewPage = () => {
     <div>
       <div className="mb-8">
         <h1 className="text-3xl font-semibold text-gray-900 mb-2">Overview</h1>
-        <p className="text-gray-600">Real-time performance metrics and activity</p>
+        <p className="text-gray-600">Your calling campaign dashboard</p>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-4 gap-6 mb-8">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Phone className="w-5 h-5 text-blue-600" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-purple-100 rounded-lg">
+              <Phone className="w-6 h-6 text-purple-600" />
             </div>
-            <span className="text-gray-600 text-sm">Total Campaigns</span>
           </div>
-          <p className="text-3xl font-semibold text-gray-900">{campaignStats.total}</p>
-          <p className="text-sm text-gray-500 mt-2">{campaignStats.active} active</p>
+          <div className="text-2xl font-semibold text-gray-900 mb-1">{stats.totalCampaigns}</div>
+          <div className="text-sm text-gray-600">Total Campaigns</div>
+          <div className="text-xs text-gray-500 mt-2">{stats.activeCampaigns} active</div>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-              <Users className="w-5 h-5 text-purple-600" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-blue-100 rounded-lg">
+              <Users className="w-6 h-6 text-blue-600" />
             </div>
-            <span className="text-gray-600 text-sm">Total Contacts</span>
           </div>
-          <p className="text-3xl font-semibold text-gray-900">{contactStats.total}</p>
-          <p className="text-sm text-gray-500 mt-2">{contactStats.called} contacted</p>
+          <div className="text-2xl font-semibold text-gray-900 mb-1">{stats.totalContacts}</div>
+          <div className="text-sm text-gray-600">Total Contacts</div>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <Phone className="w-5 h-5 text-green-600" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-green-100 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-green-600" />
             </div>
-            <span className="text-gray-600 text-sm">Total Calls</span>
           </div>
-          <p className="text-3xl font-semibold text-gray-900">{callStats.total}</p>
-          <p className="text-sm text-gray-500 mt-2">{callStats.positive} positive</p>
+          <div className="text-2xl font-semibold text-gray-900 mb-1">{stats.totalCalls}</div>
+          <div className="text-sm text-gray-600">Total Calls Made</div>
+          <div className="text-xs text-gray-500 mt-2">{stats.completedCalls} completed</div>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-primary" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-yellow-100 rounded-lg">
+              <Clock className="w-6 h-6 text-yellow-600" />
             </div>
-            <span className="text-gray-600 text-sm">Conversion Rate</span>
           </div>
-          <p className="text-3xl font-semibold text-gray-900">{callStats.conversionRate}%</p>
-          <p className="text-sm text-gray-500 mt-2">{callStats.followUp} follow-ups</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-6 mb-8">
-        {/* Intent Distribution */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5" />
-            Intent Distribution
-          </h3>
-          {callStats.total === 0 ? (
-            <p className="text-center py-8 text-gray-500 text-sm">No calls yet</p>
-          ) : (
-            <div className="space-y-4">
-              {/* Positive */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Positive</span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {intentCounts.positive} ({Math.round((intentCounts.positive / callStats.total) * 100)}%)
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-green-500 h-2 rounded-full transition-all"
-                    style={{ width: `${(intentCounts.positive / callStats.total) * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* No Interest */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">No Interest</span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {intentCounts['no-interest']} ({Math.round((intentCounts['no-interest'] / callStats.total) * 100)}%)
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-red-500 h-2 rounded-full transition-all"
-                    style={{ width: `${(intentCounts['no-interest'] / callStats.total) * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Follow-up */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Follow-up</span>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {intentCounts['follow-up']} ({Math.round((intentCounts['follow-up'] / callStats.total) * 100)}%)
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-yellow-500 h-2 rounded-full transition-all"
-                    style={{ width: `${(intentCounts['follow-up'] / callStats.total) * 100}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Campaign Status */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 col-span-2">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Calendar className="w-5 h-5" />
-            Campaigns Overview
-          </h3>
-          {campaigns.length === 0 ? (
-            <p className="text-center py-8 text-gray-500 text-sm">No campaigns yet</p>
-          ) : (
-            <div className="space-y-3">
-              {campaigns.slice(0, 5).map(campaign => (
-                <div key={campaign.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex-1">
-                    <h4 className="font-medium text-gray-900">{campaign.name}</h4>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {campaign.call_window_start} - {campaign.call_window_end} {campaign.timezone}
-                    </p>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    campaign.status === 'active' ? 'bg-green-100 text-green-800' :
-                    campaign.status === 'paused' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {campaign.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="text-2xl font-semibold text-gray-900 mb-1">{stats.pendingCalls}</div>
+          <div className="text-sm text-gray-600">Pending Calls</div>
         </div>
       </div>
 
-      {/* Recent Activity */}
+      {/* Quick Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="bg-gradient-to-br from-primary to-primary-dark rounded-xl p-6 text-white">
+          <h3 className="text-xl font-semibold mb-2">Start a New Campaign</h3>
+          <p className="text-white/80 mb-4">Create a new calling campaign and add contacts to get started</p>
+          <button
+            onClick={() => navigate('/campaigns/create')}
+            className="px-4 py-2 bg-white text-primary rounded-lg hover:bg-gray-100 transition-colors font-medium"
+          >
+            Create Campaign
+          </button>
+        </div>
+
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white">
+          <h3 className="text-xl font-semibold mb-2">Manage Contacts</h3>
+          <p className="text-white/80 mb-4">View and organize all your contacts across campaigns</p>
+          <button
+            onClick={() => navigate('/contacts')}
+            className="px-4 py-2 bg-white text-blue-600 rounded-lg hover:bg-gray-100 transition-colors font-medium"
+          >
+            View Contacts
+          </button>
+        </div>
+      </div>
+
+      {/* Recent Campaigns */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <Clock className="w-5 h-5" />
-          Recent Activity
-        </h3>
-        {callLogs.length === 0 ? (
-          <div className="text-center py-12">
-            <Phone className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500">No activity yet</p>
-            <p className="text-sm text-gray-400 mt-2">Start a campaign to see call activity here</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {callLogs.map(call => {
-              const contact = contacts.find(c => c.id === call.contact_id);
-              return (
-                <div key={call.id} className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    call.intent_label === 'positive' ? 'bg-green-100' :
-                    call.intent_label === 'no-interest' ? 'bg-red-100' : 'bg-yellow-100'
-                  }`}>
-                    {call.intent_label === 'positive' ? (
-                      <CheckCircle className="w-5 h-5 text-green-600" />
-                    ) : (
-                      <Phone className="w-5 h-5 text-gray-600" />
-                    )}
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="font-medium text-gray-900">{contact?.name || 'Unknown Contact'}</p>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getIntentColor(call.intent_label)}`}>
-                        {getIntentLabel(call.intent_label)}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-1">{call.ai_summary}</p>
-                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                      <span>{new Date(call.call_date).toLocaleString()}</span>
-                      <span>•</span>
-                      <span>{Math.floor(call.duration / 60)}m {call.duration % 60}s</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-gray-900">Recent Campaigns</h2>
+          <button
+            onClick={() => navigate('/campaigns')}
+            className="text-sm text-primary hover:underline"
+          >
+            View All
+          </button>
+        </div>
+        
+        <RecentCampaignsList />
       </div>
+    </div>
+  );
+};
+
+// Recent Campaigns List Component
+const RecentCampaignsList = () => {
+  const navigate = useNavigate();
+  const [campaigns, setCampaigns] = useState<CampaignWithContactStats[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchRecentCampaigns();
+  }, []);
+
+  const fetchRecentCampaigns = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('campaigns')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) throw error;
+
+      // Fetch contact counts for each campaign
+      const campaignsWithStats = await Promise.all(
+        (data || []).map(async (campaign) => {
+          const { data: campaignContacts } = await supabase
+            .from('campaign_contacts')
+            .select('status')
+            .eq('campaign_id', campaign.id);
+
+          return {
+            ...campaign,
+            totalContacts: campaignContacts?.length || 0,
+            pendingContacts: campaignContacts?.filter(cc => cc.status === 'pending').length || 0
+          };
+        })
+      );
+
+      setCampaigns(campaignsWithStats);
+    } catch (err) {
+      console.error('Error fetching recent campaigns:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-8 text-gray-500">Loading campaigns...</div>;
+  }
+
+  if (campaigns.length === 0) {
+    return (
+      <div className="text-center py-8 text-gray-500">
+        No campaigns yet. Create your first campaign to get started.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {campaigns.map((campaign) => (
+        <div
+          key={campaign.id}
+          onClick={() => navigate(`/campaigns/${campaign.id}`)}
+          className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+        >
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <h3 className="font-medium text-gray-900">{campaign.name}</h3>
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                campaign.status === 'active' ? 'bg-green-100 text-green-800' :
+                campaign.status === 'paused' ? 'bg-yellow-100 text-yellow-800' :
+                'bg-gray-100 text-gray-800'
+              }`}>
+                {campaign.status}
+              </span>
+            </div>
+            {campaign.description && (
+              <p className="text-sm text-gray-600 mt-1">{campaign.description}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-6 text-sm">
+            <div className="text-center">
+              <div className="font-semibold text-gray-900">{campaign.totalContacts}</div>
+              <div className="text-gray-500">Contacts</div>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-blue-900">{campaign.pendingContacts}</div>
+              <div className="text-blue-600">Pending</div>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

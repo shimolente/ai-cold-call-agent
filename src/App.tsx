@@ -2,8 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/layout/Layout';
 import OverviewPage from './pages/OverviewPage';
 import CampaignsListPage from './pages/CampaignsListPage';
-import CampaignDetailPage from './pages/CampaignDetailPage';
 import CreateCampaignPage from './pages/CreateCampaignPage';
+import CampaignDetailPage from './pages/CampaignDetailPage';
 import ContactsPage from './pages/ContactsPage';
 import USPLibraryPage from './pages/USPLibraryPage';
 

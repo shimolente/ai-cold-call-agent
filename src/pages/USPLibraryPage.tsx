@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Lightbulb, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { USP } from '../types';
 
@@ -30,15 +30,8 @@ const USPLibraryPage = () => {
     }
   };
 
-  const handleEdit = (usp: USP) => {
-    setEditingUSP(usp);
-    setShowModal(true);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this USP? This action cannot be undone.')) {
-      return;
-    }
+  const deleteUSP = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this USP?')) return;
 
     try {
       const { error } = await supabase
@@ -50,87 +43,94 @@ const USPLibraryPage = () => {
       await fetchUSPs();
     } catch (err) {
       console.error('Error deleting USP:', err);
-      alert('Failed to delete USP');
+      alert('Error deleting USP');
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-gray-500">Loading USPs...</div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-3xl font-semibold text-gray-900 mb-2">USP Library</h1>
-            <p className="text-gray-600">Manage your Unique Selling Propositions for AI to use during calls</p>
-          </div>
-          <button
-            onClick={() => {
-              setEditingUSP(null);
-              setShowModal(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            Add USP
-          </button>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-semibold text-gray-900 mb-2">USP Library</h1>
+          <p className="text-gray-600">Manage your unique selling propositions</p>
         </div>
+        <button
+          onClick={() => {
+            setEditingUSP(null);
+            setShowModal(true);
+          }}
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+        >
+          <Plus className="w-5 h-5" />
+          Add USP
+        </button>
       </div>
 
-      {loading ? (
-        <div className="text-center py-12 text-gray-500">Loading USPs...</div>
-      ) : usps.length === 0 ? (
+      {usps.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <Lightbulb className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No USPs yet</h3>
-          <p className="text-gray-500 mb-6">Create your first USP to help AI map solutions to prospect pain points</p>
+          <p className="text-gray-500 mb-4">No USPs yet</p>
           <button
             onClick={() => setShowModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+            className="text-primary hover:underline"
           >
-            <Plus className="w-5 h-5" />
-            Add Your First USP
+            Create your first USP
           </button>
         </div>
       ) : (
-        <div className="grid gap-6">
-          {usps.map(usp => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {usps.map((usp) => (
             <div key={usp.id} className="bg-white rounded-xl border border-gray-200 p-6">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                      <Lightbulb className="w-5 h-5 text-yellow-600" />
-                    </div>
-                    <h3 className="text-xl font-semibold text-gray-900">{usp.title}</h3>
-                  </div>
-                  <p className="text-gray-600 mb-4">{usp.description}</p>
-                  
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {usp.pain_point_tags.map((tag, idx) => (
-                      <span key={idx} className="px-3 py-1 bg-red-100 text-red-700 text-sm rounded-full">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="text-sm text-gray-500">
-                    Used in {usp.usage_count} campaigns
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
+              <div className="flex items-start justify-between mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 flex-1">{usp.title}</h3>
+                <div className="flex items-center gap-1">
                   <button
-                    onClick={() => handleEdit(usp)}
-                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    onClick={() => {
+                      setEditingUSP(usp);
+                      setShowModal(true);
+                    }}
+                    className="p-1 text-gray-600 hover:bg-gray-100 rounded transition-colors"
                   >
-                    <Edit2 className="w-5 h-5" />
+                    <Edit2 className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => handleDelete(usp.id)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    onClick={() => deleteUSP(usp.id)}
+                    className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
                   >
-                    <Trash2 className="w-5 h-5" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
+              </div>
+
+              <p className="text-sm text-gray-600 mb-3">{usp.description}</p>
+
+              {usp.category && (
+                <div className="mb-3">
+                  <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded">
+                    {usp.category}
+                  </span>
+                </div>
+              )}
+
+              {usp.pain_point_tags && usp.pain_point_tags.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {usp.pain_point_tags.map((tag: string, idx: number) => (
+                    <span key={idx} className="px-3 py-1 bg-red-100 text-red-700 text-sm rounded-full">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="text-sm text-gray-500">
+                Used in {usp.usage_count || 0} campaigns
               </div>
             </div>
           ))}
@@ -144,7 +144,11 @@ const USPLibraryPage = () => {
             setShowModal(false);
             setEditingUSP(null);
           }}
-          onSuccess={fetchUSPs}
+          onSave={() => {
+            fetchUSPs();
+            setShowModal(false);
+            setEditingUSP(null);
+          }}
         />
       )}
     </div>
@@ -152,19 +156,18 @@ const USPLibraryPage = () => {
 };
 
 // USP Modal Component
-const USPModal = ({ 
-  usp, 
-  onClose, 
-  onSuccess 
-}: { 
-  usp: USP | null; 
-  onClose: () => void; 
-  onSuccess: () => void;
-}) => {
+interface USPModalProps {
+  usp: USP | null;
+  onClose: () => void;
+  onSave: () => void;
+}
+
+const USPModal = ({ usp, onClose, onSave }: USPModalProps) => {
   const [formData, setFormData] = useState({
     title: usp?.title || '',
     description: usp?.description || '',
-    pain_point_tags: usp?.pain_point_tags || [] as string[]
+    category: usp?.category || '',
+    pain_point_tags: (usp?.pain_point_tags || []) as string[]
   });
   const [tagInput, setTagInput] = useState('');
   const [saving, setSaving] = useState(false);
@@ -182,45 +185,53 @@ const USPModal = ({
   const handleRemoveTag = (tag: string) => {
     setFormData({
       ...formData,
-      pain_point_tags: formData.pain_point_tags.filter(t => t !== tag)
+      pain_point_tags: formData.pain_point_tags.filter((t: string) => t !== tag)
     });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
+
+    if (!formData.title || !formData.description) {
+      alert('Title and description are required');
+      return;
+    }
 
     try {
+      setSaving(true);
+
       if (usp) {
-        // Update existing
+        // Update existing USP
         const { error } = await supabase
           .from('usps')
           .update({
             title: formData.title,
             description: formData.description,
+            category: formData.category || null,
             pain_point_tags: formData.pain_point_tags
           })
           .eq('id', usp.id);
 
         if (error) throw error;
       } else {
-        // Create new
+        // Create new USP
         const { error } = await supabase
           .from('usps')
           .insert([{
             title: formData.title,
             description: formData.description,
-            pain_point_tags: formData.pain_point_tags
+            category: formData.category || null,
+            pain_point_tags: formData.pain_point_tags,
+            usage_count: 0
           }]);
 
         if (error) throw error;
       }
 
-      onSuccess();
-      onClose();
+      onSave();
     } catch (err) {
       console.error('Error saving USP:', err);
-      alert('Failed to save USP');
+      alert('Error saving USP. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -228,102 +239,115 @@ const USPModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+      <div className="bg-white rounded-xl max-w-2xl w-full p-6">
+        <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-semibold text-gray-900">
-            {usp ? 'Edit USP' : 'Add USP'}
+            {usp ? 'Edit USP' : 'Create New USP'}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-6 h-6" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6">
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Title <span className="text-red-500">*</span>
-              </label>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Title *
+            </label>
+            <input
+              type="text"
+              value={formData.title}
+              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description *
+            </label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Category
+            </label>
+            <input
+              type="text"
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              placeholder="e.g., Cost Savings, Efficiency, Security"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Pain Point Tags
+            </label>
+            <div className="flex gap-2 mb-2">
               <input
                 type="text"
-                required
-                value={formData.title}
-                onChange={e => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                placeholder="24/7 Customer Support"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddTag();
+                  }
+                }}
+                placeholder="Add a pain point tag"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               />
+              <button
+                type="button"
+                onClick={handleAddTag}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Add
+              </button>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Description <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                required
-                value={formData.description}
-                onChange={e => setFormData({ ...formData, description: e.target.value })}
-                rows={4}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                placeholder="Our support team is available around the clock to help with any issues..."
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Pain Point Tags
-              </label>
-              <div className="flex gap-2 mb-3">
-                <input
-                  type="text"
-                  value={tagInput}
-                  onChange={e => setTagInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                  placeholder="e.g., poor support, downtime issues"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddTag}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            <div className="flex flex-wrap gap-2">
+              {formData.pain_point_tags.map((tag: string) => (
+                <span 
+                  key={tag}
+                  className="inline-flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 text-sm rounded-full"
                 >
-                  Add
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {formData.pain_point_tags.map(tag => (
-                  <span 
-                    key={tag}
-                    className="inline-flex items-center gap-1 px-3 py-1 bg-red-100 text-red-700 text-sm rounded-full"
+                  {tag}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTag(tag)}
+                    className="hover:text-red-900"
                   >
-                    {tag}
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTag(tag)}
-                      className="hover:text-red-900"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 mt-8 pt-6 border-t border-gray-200">
+          <div className="flex gap-3 pt-4">
             <button
               type="button"
               onClick={onClose}
-              disabled={saving}
-              className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50"
+              className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {saving ? 'Saving...' : usp ? 'Update USP' : 'Add USP'}
+              {saving ? 'Saving...' : usp ? 'Update USP' : 'Create USP'}
             </button>
           </div>
         </form>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import type { CampaignStatus } from '../../types';
 import type { Campaign, USP } from '../../types';
 
 interface CampaignSettingsModalProps {
@@ -131,17 +132,17 @@ const CampaignSettingsModal = ({ campaign, onClose, onUpdate }: CampaignSettings
 
             {/* Status */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-              <select
-                value={formData.status}
-                onChange={e => setFormData({ ...formData, status: e.target.value as any })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-              >
-                <option value="active">Active</option>
-                <option value="paused">Paused</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+  <select
+    value={formData.status}
+    onChange={e => setFormData({ ...formData, status: e.target.value as CampaignStatus })}
+    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+  >
+    <option value="active">Active</option>
+    <option value="paused">Paused</option>
+    <option value="completed">Completed</option>
+  </select>
+</div>
 
             {/* Call Window */}
             <div className="grid grid-cols-3 gap-4">

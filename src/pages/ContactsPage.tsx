@@ -1,40 +1,59 @@
 import { useState, useEffect } from 'react';
-import { Users, Search, Phone, Mail, Building2, X } from 'lucide-react';
+import { Search, Users, Phone, Mail, Building2, Filter, ArrowUpDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { Contact, CallLog, IntentLabel } from '../types';
+import ContactDetailModal from '../components/contacts/ContactDetailModal';
 
-interface ContactWithCampaignData extends Contact {
+interface Contact {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  company: string | null;
+  profile_summary: string | null;
+  pain_points: string[] | null;
+  created_at: string;
+}
+
+interface CampaignContact {
+  id: string;
+  contact_id: string;
+  campaign_id: string;
+  status: 'pending' | 'completed' | 'failed';
+  created_at: string;
   campaigns?: {
+    id: string;
     name: string;
   };
 }
 
 interface ContactWithCampaign extends Contact {
-  campaign_name?: string;
+  campaign_contacts: CampaignContact[];
 }
 
 interface Campaign {
   id: string;
   name: string;
-  description: string | null;
-  status: string;
-  call_window_start: string;
-  call_window_end: string;
-  timezone: string;
-  pause_between_calls: number;
-  selected_usps: string[];
-  created_at: string;
-  updated_at: string;
 }
+
+type SortField = 'name' | 'company' | 'created_at';
+type SortOrder = 'asc' | 'desc';
 
 const ContactsPage = () => {
   const [contacts, setContacts] = useState<ContactWithCampaign[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterCampaign, setFilterCampaign] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [selectedContact, setSelectedContact] = useState<ContactWithCampaign | null>(null);
+  
+  // Filter states
+  const [selectedCampaignFilter, setSelectedCampaignFilter] = useState<string>('all');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
+  const [showFilters, setShowFilters] = useState(false);
+  
+  // Sort states
+  const [sortField, setSortField] = useState<SortField>('created_at');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [showSort, setShowSort] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -43,33 +62,33 @@ const ContactsPage = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-
+      
       // Fetch campaigns
       const { data: campaignsData } = await supabase
         .from('campaigns')
-        .select('*')
+        .select('id, name')
         .order('name');
-
+      
       setCampaigns(campaignsData || []);
 
-      // Fetch contacts with campaign names
-      const { data: contactsData, error } = await supabase
+      // Fetch contacts
+      const { data, error } = await supabase
         .from('contacts')
         .select(`
           *,
-          campaigns!inner(name)
+          campaign_contacts!inner(
+            id,
+            contact_id,
+            campaign_id,
+            status,
+            created_at,
+            campaigns(id, name)
+          )
         `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-
-      // Transform data to include campaign_name
-      const transformedContacts: ContactWithCampaign[] = (contactsData || []).map((contact: ContactWithCampaignData) => ({
-        ...contact,
-        campaign_name: contact.campaigns?.name || 'Unknown'
-      }));
-
-      setContacts(transformedContacts);
+      setContacts(data || []);
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {
@@ -77,118 +96,279 @@ const ContactsPage = () => {
     }
   };
 
-  const filteredContacts = contacts.filter(contact => {
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+    setShowSort(false);
+  };
+
+  // Filter contacts
+  let filteredContacts = contacts.filter(contact => {
+    // Search filter
     const matchesSearch = 
       contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (contact.company || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      contact.company?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      contact.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       contact.phone.includes(searchQuery);
+    
+    if (!matchesSearch) return false;
 
-    const matchesCampaign = filterCampaign === 'all' || contact.campaign_id === filterCampaign;
-    const matchesStatus = filterStatus === 'all' || contact.status === filterStatus;
+    // Campaign filter
+    if (selectedCampaignFilter !== 'all') {
+      const matchesCampaign = contact.campaign_contacts.some(
+        cc => cc.campaigns?.id === selectedCampaignFilter
+      );
+      if (!matchesCampaign) return false;
+    }
 
-    return matchesSearch && matchesCampaign && matchesStatus;
+    // Status filter
+    if (selectedStatusFilter !== 'all') {
+      const matchesStatus = contact.campaign_contacts.some(
+        cc => cc.status === selectedStatusFilter
+      );
+      if (!matchesStatus) return false;
+    }
+
+    return true;
   });
 
-  // Calculate stats
-  const stats = {
-    total: contacts.length,
-    called: contacts.filter(c => c.status === 'completed').length,
-    pending: contacts.filter(c => c.status === 'pending').length,
-    failed: contacts.filter(c => c.status === 'failed').length
+  // Sort contacts
+  filteredContacts = [...filteredContacts].sort((a, b) => {
+    let aValue: string | number;
+    let bValue: string | number;
+
+    switch (sortField) {
+      case 'name':
+        aValue = a.name.toLowerCase();
+        bValue = b.name.toLowerCase();
+        break;
+      case 'company':
+        aValue = (a.company || '').toLowerCase();
+        bValue = (b.company || '').toLowerCase();
+        break;
+      case 'created_at':
+        aValue = new Date(a.created_at).getTime();
+        bValue = new Date(b.created_at).getTime();
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+    if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const clearFilters = () => {
+    setSelectedCampaignFilter('all');
+    setSelectedStatusFilter('all');
+    setSearchQuery('');
   };
+
+  const activeFiltersCount = 
+    (selectedCampaignFilter !== 'all' ? 1 : 0) +
+    (selectedStatusFilter !== 'all' ? 1 : 0);
 
   return (
     <div>
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-3xl font-semibold text-gray-900 mb-2">Contacts</h1>
-            <p className="text-gray-600">Master database of all contacts across campaigns</p>
-          </div>
-        </div>
+        <h1 className="text-3xl font-semibold text-gray-900 mb-2">Contacts</h1>
+        <p className="text-gray-600">Manage your contact database</p>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-6 mb-8">
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Users className="w-5 h-5 text-blue-600" />
-            </div>
-            <span className="text-gray-600 text-sm">Total Contacts</span>
+      {/* Search and Filter Bar */}
+      <div className="mb-6 space-y-4">
+        <div className="flex gap-3">
+          {/* Search */}
+          <div className="flex-1 relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search contacts by name, company, email, or phone..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            />
           </div>
-          <p className="text-3xl font-semibold text-gray-900">{stats.total}</p>
+
+          {/* Filter Button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`px-4 py-3 border rounded-lg flex items-center gap-2 transition-colors ${
+                activeFiltersCount > 0
+                  ? 'border-primary bg-primary/5 text-primary'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Filter className="w-5 h-5" />
+              <span>Filter</span>
+              {activeFiltersCount > 0 && (
+                <span className="px-2 py-0.5 bg-primary text-white text-xs rounded-full">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
+
+            {/* Filter Dropdown */}
+            {showFilters && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setShowFilters(false)}
+                />
+                <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 p-4 z-20">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold text-gray-900">Filters</h3>
+                      {activeFiltersCount > 0 && (
+                        <button
+                          onClick={clearFilters}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Campaign Filter */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Campaign
+                      </label>
+                      <select
+                        value={selectedCampaignFilter}
+                        onChange={(e) => setSelectedCampaignFilter(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      >
+                        <option value="all">All Campaigns</option>
+                        {campaigns.map(campaign => (
+                          <option key={campaign.id} value={campaign.id}>
+                            {campaign.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Status Filter */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Status
+                      </label>
+                      <select
+                        value={selectedStatusFilter}
+                        onChange={(e) => setSelectedStatusFilter(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                      >
+                        <option value="all">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Sort Button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowSort(!showSort)}
+              className="px-4 py-3 border border-gray-300 bg-white rounded-lg flex items-center gap-2 hover:bg-gray-50 transition-colors"
+            >
+              <ArrowUpDown className="w-5 h-5" />
+              <span>Sort</span>
+            </button>
+
+            {/* Sort Dropdown */}
+            {showSort && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10" 
+                  onClick={() => setShowSort(false)}
+                />
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
+                  <button
+                    onClick={() => handleSort('name')}
+                    className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between ${
+                      sortField === 'name' ? 'text-primary font-medium' : 'text-gray-700'
+                    }`}
+                  >
+                    <span>Name</span>
+                    {sortField === 'name' && (
+                      <span className="text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleSort('company')}
+                    className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between ${
+                      sortField === 'company' ? 'text-primary font-medium' : 'text-gray-700'
+                    }`}
+                  >
+                    <span>Company</span>
+                    {sortField === 'company' && (
+                      <span className="text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleSort('created_at')}
+                    className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between ${
+                      sortField === 'created_at' ? 'text-primary font-medium' : 'text-gray-700'
+                    }`}
+                  >
+                    <span>Date Added</span>
+                    {sortField === 'created_at' && (
+                      <span className="text-xs">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <Phone className="w-5 h-5 text-green-600" />
-            </div>
-            <span className="text-gray-600 text-sm">Called</span>
+        {/* Active Filters Display */}
+        {activeFiltersCount > 0 && (
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-600">Active filters:</span>
+            {selectedCampaignFilter !== 'all' && (
+              <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded flex items-center gap-1">
+                {campaigns.find(c => c.id === selectedCampaignFilter)?.name}
+                <button
+                  onClick={() => setSelectedCampaignFilter('all')}
+                  className="hover:text-blue-900"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {selectedStatusFilter !== 'all' && (
+              <span className="px-2 py-1 bg-green-100 text-green-700 rounded flex items-center gap-1">
+                {selectedStatusFilter}
+                <button
+                  onClick={() => setSelectedStatusFilter('all')}
+                  className="hover:text-green-900"
+                >
+                  ×
+                </button>
+              </span>
+            )}
           </div>
-          <p className="text-3xl font-semibold text-gray-900">{stats.called}</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Phone className="w-5 h-5 text-blue-600" />
-            </div>
-            <span className="text-gray-600 text-sm">Pending</span>
-          </div>
-          <p className="text-3xl font-semibold text-gray-900">{stats.pending}</p>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-              <Phone className="w-5 h-5 text-red-600" />
-            </div>
-            <span className="text-gray-600 text-sm">Failed</span>
-          </div>
-          <p className="text-3xl font-semibold text-gray-900">{stats.failed}</p>
-        </div>
+        )}
       </div>
 
-      {/* Filters */}
-      <div className="mb-6 flex gap-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by name, company, or phone..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-          />
-        </div>
-
-        <select
-          value={filterCampaign}
-          onChange={(e) => setFilterCampaign(e.target.value)}
-          className="px-4 py-3 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-        >
-          <option value="all">All Campaigns</option>
-          {campaigns.map(campaign => (
-            <option key={campaign.id} value={campaign.id}>{campaign.name}</option>
-          ))}
-        </select>
-
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="px-4 py-3 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-        >
-          <option value="all">All Status</option>
-          <option value="pending">Pending</option>
-          <option value="calling">Calling</option>
-          <option value="completed">Completed</option>
-          <option value="failed">Failed</option>
-        </select>
+      {/* Results Count */}
+      <div className="mb-4 text-sm text-gray-600">
+        Showing {filteredContacts.length} of {contacts.length} contacts
       </div>
 
-      {/* Contacts Table */}
+      {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-500">Loading contacts...</div>
@@ -196,12 +376,20 @@ const ContactsPage = () => {
           <div className="p-12 text-center">
             <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No contacts found</h3>
-            <p className="text-gray-500">
+            <p className="text-gray-500 mb-4">
               {contacts.length === 0 
                 ? 'Add contacts from the Campaigns page to get started'
-                : 'Try adjusting your filters'
+                : 'Try adjusting your filters or search query'
               }
             </p>
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={clearFilters}
+                className="text-primary hover:underline"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -213,53 +401,57 @@ const ContactsPage = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Phone</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Campaign</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredContacts.map(contact => (
-                  <tr key={contact.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-gray-900">{contact.name}</div>
-                      {contact.email && (
-                        <div className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                          <Mail className="w-3 h-3" />
-                          {contact.email}
+                {filteredContacts.map(contact => {
+                  const campaignContact = contact.campaign_contacts[0];
+                  return (
+                    <tr 
+                      key={contact.id} 
+                      onClick={() => setSelectedContact(contact)}
+                      className="hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-gray-900">{contact.name}</div>
+                        {contact.email && (
+                          <div className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                            <Mail className="w-3 h-3" />
+                            {contact.email}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 text-gray-900">
+                          <Building2 className="w-4 h-4 text-gray-400" />
+                          {contact.company || '-'}
                         </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2 text-gray-900">
-                        <Building2 className="w-4 h-4 text-gray-400" />
-                        {contact.company || '-'}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-gray-900">{contact.phone}</td>
-                    <td className="px-6 py-4">
-                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
-                        {contact.campaign_name}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        contact.status === 'completed' ? 'bg-green-100 text-green-800' :
-                        contact.status === 'calling' ? 'bg-yellow-100 text-yellow-800' :
-                        contact.status === 'failed' ? 'bg-red-100 text-red-800' :
-                        'bg-blue-100 text-blue-800'
-                      }`}>
-                        {contact.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => setSelectedContact(contact)}
-                        className="text-primary hover:underline text-sm font-medium"
-                      >
-                        View Details
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 text-gray-900">
+                          <Phone className="w-4 h-4 text-gray-400" />
+                          {contact.phone}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">
+                          {campaignContact?.campaigns?.name || 'Unknown'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          campaignContact?.status === 'completed' 
+                            ? 'bg-green-100 text-green-800' 
+                            : campaignContact?.status === 'pending'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {campaignContact?.status || 'unknown'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -273,176 +465,6 @@ const ContactsPage = () => {
           onClose={() => setSelectedContact(null)}
         />
       )}
-    </div>
-  );
-};
-
-// Contact Detail Modal Component
-interface ContactDetailModalProps {
-  contact: ContactWithCampaign;
-  onClose: () => void;
-}
-
-const ContactDetailModal = ({ contact, onClose }: ContactDetailModalProps) => {
-  const [callLogs, setCallLogs] = useState<CallLog[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchCallLogs();
-  }, []);
-
-  const fetchCallLogs = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('call_logs')
-        .select('*')
-        .eq('contact_id', contact.id)
-        .order('call_date', { ascending: false });
-
-      if (error) throw error;
-      setCallLogs(data || []);
-    } catch (err) {
-      console.error('Error fetching call logs:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getIntentColor = (intent: IntentLabel): string => {
-    switch (intent) {
-      case 'positive':
-        return 'bg-green-100 text-green-800';
-      case 'no-interest':
-        return 'bg-red-100 text-red-800';
-      case 'follow-up':
-        return 'bg-yellow-100 text-yellow-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getIntentLabel = (intent: IntentLabel): string => {
-    switch (intent) {
-      case 'positive':
-        return 'Positive';
-      case 'no-interest':
-        return 'No Interest';
-      case 'follow-up':
-        return 'Follow-up';
-      default:
-        return intent;
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900">{contact.name}</h2>
-            <p className="text-gray-600 mt-1">{contact.company}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        <div className="p-6">
-          {/* Contact Info */}
-          <div className="grid grid-cols-2 gap-6 mb-6">
-            <div>
-              <label className="text-sm font-medium text-gray-600">Phone</label>
-              <p className="text-gray-900 mt-1">{contact.phone}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-600">Email</label>
-              <p className="text-gray-900 mt-1">{contact.email || '-'}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-600">Campaign</label>
-              <p className="text-gray-900 mt-1">{contact.campaign_name}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-600">Status</label>
-              <p className="text-gray-900 mt-1">
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  contact.status === 'completed' ? 'bg-green-100 text-green-800' :
-                  contact.status === 'calling' ? 'bg-yellow-100 text-yellow-800' :
-                  contact.status === 'failed' ? 'bg-red-100 text-red-800' :
-                  'bg-blue-100 text-blue-800'
-                }`}>
-                  {contact.status}
-                </span>
-              </p>
-            </div>
-            <div className="col-span-2">
-              <label className="text-sm font-medium text-gray-600">Profile Summary</label>
-              <p className="text-gray-900 mt-1">{contact.profile_summary || 'No summary available'}</p>
-            </div>
-            <div className="col-span-2">
-              <label className="text-sm font-medium text-gray-600">Pain Points</label>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {contact.pain_points.length > 0 ? (
-                  contact.pain_points.map((point, idx) => (
-                    <span key={idx} className="px-3 py-1 bg-red-100 text-red-700 text-sm rounded-full">
-                      {point}
-                    </span>
-                  ))
-                ) : (
-                  <p className="text-gray-500 text-sm">No pain points identified</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Call History */}
-          <div>
-            <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-              <Phone className="w-5 h-5" />
-              Call History
-            </h3>
-            {loading ? (
-              <p className="text-center py-8 text-gray-500 text-sm">Loading call history...</p>
-            ) : callLogs.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No calls yet</p>
-            ) : (
-              <div className="space-y-4">
-                {callLogs.map(log => (
-                  <div key={log.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <p className="text-sm text-gray-500 mt-1">
-                          {new Date(log.call_date).toLocaleString()} • {Math.floor(log.duration / 60)}m {log.duration % 60}s
-                        </p>
-                      </div>
-                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getIntentColor(log.intent_label)}`}>
-                        {getIntentLabel(log.intent_label)}
-                      </span>
-                    </div>
-                    <div className="mb-3">
-                      <p className="text-sm font-medium text-gray-700 mb-1">AI Summary:</p>
-                      <p className="text-sm text-gray-600">{log.ai_summary}</p>
-                    </div>
-                    <details className="text-sm">
-                      <summary className="cursor-pointer text-primary hover:underline">View Transcript</summary>
-                      <pre className="mt-2 p-3 bg-gray-50 rounded text-xs whitespace-pre-wrap">{log.transcript}</pre>
-                    </details>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="p-6 border-t border-gray-200 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
-          >
-            Close
-          </button>
-        </div>
-      </div>
     </div>
   );
 };

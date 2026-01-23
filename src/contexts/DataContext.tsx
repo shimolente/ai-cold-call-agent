@@ -1,257 +1,220 @@
-import { useState, useEffect } from 'react';
+import { createContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { DataContext } from './DataContextDefinition';
+import { supabase } from '../lib/supabase';
+import type { Campaign, Contact } from '../types';
 
-interface AppData {
-  campaigns: unknown[];
-  contacts: unknown[];
-  usps: unknown[];
-  callLogs: unknown[];
+interface DataContextType {
+  campaigns: Campaign[];
+  contacts: Contact[];
+  loading: boolean;
+  addCampaign: (campaign: Omit<Campaign, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  updateCampaign: (id: string, updates: Partial<Campaign>) => Promise<void>;
+  deleteCampaign: (id: string) => Promise<void>;
+  addContact: (contact: Omit<Contact, 'id' | 'created_at' | 'updated_at'>) => Promise<Contact | null>;
+  updateContact: (id: string, updates: Partial<Contact>) => Promise<void>;
+  deleteContact: (id: string) => Promise<void>;
+  addContactToCampaign: (campaignId: string, contactId: string) => Promise<void>;
+  removeContactFromCampaign: (campaignContactId: string) => Promise<void>;
+  fetchData: () => Promise<void>;
 }
 
-export const DataProvider = ({ children }: { children: ReactNode }) => {
-  const [data, setData] = useState<AppData>(() => {
-    const saved = localStorage.getItem('aiCallAgentData');
-    if (saved) {
-      return JSON.parse(saved) as AppData;
-    }
-    return {
-      campaigns: [],
-      contacts: [],
-      usps: [],
-      callLogs: []
-    };
-  });
+export const DataContext = createContext<DataContextType | null>(null);
+
+interface DataProviderProps {
+  children: ReactNode;
+}
+
+export const DataProvider = ({ children }: DataProviderProps) => {
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    localStorage.setItem('aiCallAgentData', JSON.stringify(data));
-  }, [data]);
+    fetchData();
+  }, []);
 
-  const addCampaign = (campaign: unknown) => {
-    const newCampaign = {
-      ...campaign as Record<string, unknown>,
-      id: `camp_${Date.now()}`,
-      created_at: new Date().toISOString()
-    };
-    setData((prev: AppData) => ({ ...prev, campaigns: [...prev.campaigns, newCampaign] }));
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+
+      // Fetch campaigns
+      const { data: campaignsData, error: campaignsError } = await supabase
+        .from('campaigns')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (campaignsError) throw campaignsError;
+      setCampaigns(campaignsData || []);
+
+      // Fetch contacts
+      const { data: contactsData, error: contactsError } = await supabase
+        .from('contacts')
+        .select('*')
+        .order('name');
+
+      if (contactsError) throw contactsError;
+      setContacts(contactsData || []);
+    } catch (err) {
+      console.error('Error fetching data:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const updateCampaign = (id: string, updates: unknown) => {
-    setData((prev: AppData) => ({
-      ...prev,
-      campaigns: prev.campaigns.map((c: unknown) => {
-        const campaign = c as Record<string, unknown>;
-        return campaign.id === id ? { ...campaign, ...updates as Record<string, unknown> } : campaign;
-      })
-    }));
+  const addCampaign = async (campaign: Omit<Campaign, 'id' | 'created_at' | 'updated_at'>) => {
+    try {
+      const { data, error } = await supabase
+        .from('campaigns')
+        .insert([campaign])
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (data) {
+        setCampaigns([data, ...campaigns]);
+      }
+    } catch (err) {
+      console.error('Error adding campaign:', err);
+      throw err;
+    }
   };
 
-  const deleteCampaign = (id: string) => {
-    setData((prev: AppData) => ({
-      ...prev,
-      campaigns: prev.campaigns.filter((c: unknown) => (c as Record<string, unknown>).id !== id),
-      contacts: prev.contacts.map((contact: unknown) => {
-        const c = contact as Record<string, unknown>;
-        return {
-          ...c,
-          campaigns: (c.campaigns as unknown[] || []).filter((cp: unknown) => 
-            (cp as Record<string, unknown>).campaignId !== id
-          )
-        };
-      }),
-      callLogs: prev.callLogs.filter((log: unknown) => 
-        (log as Record<string, unknown>).campaignId !== id
-      )
-    }));
+  const updateCampaign = async (id: string, updates: Partial<Campaign>) => {
+    try {
+      const { error } = await supabase
+        .from('campaigns')
+        .update(updates)
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setCampaigns(campaigns.map(c => c.id === id ? { ...c, ...updates } : c));
+    } catch (err) {
+      console.error('Error updating campaign:', err);
+      throw err;
+    }
   };
 
-  const addUSP = (usp: unknown) => {
-    const newUSP = {
-      ...usp as Record<string, unknown>,
-      id: `usp_${Date.now()}`,
-      usage_count: 0,
-      created_at: new Date().toISOString()
-    };
-    setData((prev: AppData) => ({ ...prev, usps: [...prev.usps, newUSP] }));
+  const deleteCampaign = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('campaigns')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setCampaigns(campaigns.filter(c => c.id !== id));
+    } catch (err) {
+      console.error('Error deleting campaign:', err);
+      throw err;
+    }
   };
 
-  const updateUSP = (id: string, updates: unknown) => {
-    setData((prev: AppData) => ({
-      ...prev,
-      usps: prev.usps.map((u: unknown) => {
-        const usp = u as Record<string, unknown>;
-        return usp.id === id ? { ...usp, ...updates as Record<string, unknown> } : usp;
-      })
-    }));
+  const addContact = async (contact: Omit<Contact, 'id' | 'created_at' | 'updated_at'>): Promise<Contact | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('contacts')
+        .insert([contact])
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      if (data) {
+        setContacts([data, ...contacts]);
+        return data;
+      }
+      return null;
+    } catch (err) {
+      console.error('Error adding contact:', err);
+      throw err;
+    }
   };
 
-  const deleteUSP = (id: string) => {
-    setData((prev: AppData) => ({
-      ...prev,
-      usps: prev.usps.filter((u: unknown) => (u as Record<string, unknown>).id !== id)
-    }));
+  const updateContact = async (id: string, updates: Partial<Contact>) => {
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update(updates)
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setContacts(contacts.map(c => c.id === id ? { ...c, ...updates } : c));
+    } catch (err) {
+      console.error('Error updating contact:', err);
+      throw err;
+    }
   };
 
-  const addContacts = (contacts: unknown[], campaignId?: string) => {
-    setData((prev: AppData) => {
-      const updatedContacts = [...prev.contacts];
-      const campaign = campaignId ? prev.campaigns.find((c: unknown) => 
-        (c as Record<string, unknown>).id === campaignId
-      ) as Record<string, unknown> | undefined : null;
+  const deleteContact = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .delete()
+        .eq('id', id);
 
-      contacts.forEach((newContact: unknown) => {
-        const nc = newContact as Record<string, unknown>;
-        const existingIndex = updatedContacts.findIndex((c: unknown) => 
-          (c as Record<string, unknown>).phone === nc.phone
-        );
-        
-        if (existingIndex >= 0) {
-          const existing = updatedContacts[existingIndex] as Record<string, unknown>;
-          if (campaignId && campaign) {
-            const campaigns = (existing.campaigns as unknown[] || []);
-            const hasAssociation = campaigns.some((cp: unknown) => 
-              (cp as Record<string, unknown>).campaignId === campaignId
-            );
-            if (!hasAssociation) {
-              campaigns.push({
-                campaignId,
-                campaignName: campaign.name,
-                status: 'pending',
-                addedDate: new Date().toISOString()
-              });
-              existing.campaigns = campaigns;
-            }
-          }
-        } else {
-          const contact = {
-            ...nc,
-            id: `contact_${Date.now()}_${Math.random()}`,
-            campaigns: campaignId && campaign ? [{
-              campaignId,
-              campaignName: campaign.name,
-              status: 'pending',
-              addedDate: new Date().toISOString()
-            }] : []
-          };
-          updatedContacts.push(contact);
-        }
-      });
-
-      const updatedCampaigns = prev.campaigns.map((c: unknown) => {
-        const camp = c as Record<string, unknown>;
-        if (camp.id === campaignId) {
-          const contactsInCampaign = updatedContacts.filter((contact: unknown) => {
-            const ct = contact as Record<string, unknown>;
-            return (ct.campaigns as unknown[] || []).some((cp: unknown) => 
-              (cp as Record<string, unknown>).campaignId === campaignId
-            );
-          });
-          return {
-            ...camp,
-            total_contacts: contactsInCampaign.length,
-            pending_count: contactsInCampaign.filter((contact: unknown) => {
-              const ct = contact as Record<string, unknown>;
-              const assoc = (ct.campaigns as unknown[] || []).find((cp: unknown) => 
-                (cp as Record<string, unknown>).campaignId === campaignId
-              ) as Record<string, unknown> | undefined;
-              return assoc?.status === 'pending';
-            }).length
-          };
-        }
-        return camp;
-      });
-
-      return { ...prev, contacts: updatedContacts, campaigns: updatedCampaigns };
-    });
+      if (error) throw error;
+      
+      setContacts(contacts.filter(c => c.id !== id));
+    } catch (err) {
+      console.error('Error deleting contact:', err);
+      throw err;
+    }
   };
 
-  const runCampaign = (campaignId: string) => {
-    const campaign = data.campaigns.find((c: unknown) => 
-      (c as Record<string, unknown>).id === campaignId
-    ) as Record<string, unknown> | undefined;
-    if (!campaign) return;
+  const addContactToCampaign = async (campaignId: string, contactId: string) => {
+    try {
+      const { error } = await supabase
+        .from('campaign_contacts')
+        .insert([{
+          campaign_id: campaignId,
+          contact_id: contactId,
+          status: 'pending'
+        }]);
 
-    setTimeout(() => {
-      setData((prev: AppData) => {
-        const newCallLogs: unknown[] = [];
-        const intents = ['positive', 'no-interest', 'follow-up'];
-        
-        const updatedContacts = prev.contacts.map((contact: unknown) => {
-          const ct = contact as Record<string, unknown>;
-          const campaignAssoc = (ct.campaigns as unknown[] || []).find((cp: unknown) => 
-            (cp as Record<string, unknown>).campaignId === campaignId
-          ) as Record<string, unknown> | undefined;
-          
-          if (campaignAssoc && campaignAssoc.status === 'pending') {
-            const intent = intents[Math.floor(Math.random() * intents.length)];
-            const duration = Math.floor(Math.random() * 180) + 60;
-            
-            const callLog = {
-              id: `call_${Date.now()}_${Math.random()}`,
-              contact_id: ct.id,
-              campaignId,
-              campaignName: campaign.name,
-              date: new Date().toISOString(),
-              duration,
-              transcript: `AI: Hi ${ct.name}, this is Alex from our company...\n\n${ct.name}: Response here...`,
-              recordingUrl: '#',
-              aiSummary: 'Call summary here',
-              intentLabel: intent,
-              painPointsDiscussed: ((ct.pain_points as unknown[] || []).slice(0, 2)),
-              uspsUsed: ((campaign.selected_usps as unknown[] || []).slice(0, 2))
-            };
+      if (error) throw error;
+    } catch (err) {
+      console.error('Error adding contact to campaign:', err);
+      throw err;
+    }
+  };
 
-            newCallLogs.push(callLog);
+  const removeContactFromCampaign = async (campaignContactId: string) => {
+    try {
+      const { error } = await supabase
+        .from('campaign_contacts')
+        .delete()
+        .eq('id', campaignContactId);
 
-            return {
-              ...ct,
-              campaigns: (ct.campaigns as unknown[] || []).map((cp: unknown) => {
-                const c = cp as Record<string, unknown>;
-                return c.campaignId === campaignId ? { ...c, status: 'completed' } : c;
-              }),
-              lastCallDate: new Date().toISOString(),
-              lastIntent: intent
-            };
-          }
-          return ct;
-        });
+      if (error) throw error;
+    } catch (err) {
+      console.error('Error removing contact from campaign:', err);
+      throw err;
+    }
+  };
 
-        const updatedCampaigns = prev.campaigns.map((c: unknown) => {
-          const camp = c as Record<string, unknown>;
-          if (camp.id === campaignId) {
-            return {
-              ...camp,
-              called_count: camp.total_contacts,
-              pending_count: 0,
-              status: 'completed'
-            };
-          }
-          return camp;
-        });
-
-        return {
-          ...prev,
-          contacts: updatedContacts,
-          campaigns: updatedCampaigns,
-          callLogs: [...prev.callLogs, ...newCallLogs]
-        };
-      });
-    }, 10000);
+  const value: DataContextType = {
+    campaigns,
+    contacts,
+    loading,
+    addCampaign,
+    updateCampaign,
+    deleteCampaign,
+    addContact,
+    updateContact,
+    deleteContact,
+    addContactToCampaign,
+    removeContactFromCampaign,
+    fetchData
   };
 
   return (
-    <DataContext.Provider value={{ 
-      data, 
-      addCampaign, 
-      updateCampaign, 
-      deleteCampaign, 
-      addUSP, 
-      updateUSP, 
-      deleteUSP, 
-      addContacts, 
-      runCampaign 
-    }}>
+    <DataContext.Provider value={value}>
       {children}
     </DataContext.Provider>
   );
 };
+
+export default DataProvider;

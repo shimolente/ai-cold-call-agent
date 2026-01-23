@@ -1,174 +1,148 @@
 import { useState } from 'react';
-import { X, Upload, AlertCircle } from 'lucide-react';
-import { useData } from '../../hooks/useData';
+import { X } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import Papa from 'papaparse';
 
 interface UploadContactsModalProps {
   campaignId: string;
   onClose: () => void;
+  onSuccess?: () => void;
 }
 
-const UploadContactsModal = ({ campaignId, onClose }: UploadContactsModalProps) => {
-  const { addContacts } = useData();
+interface CSVRow {
+  Name?: string;
+  name?: string;
+  Phone?: string;
+  phone?: string;
+  Email?: string;
+  email?: string;
+  Company?: string;
+  company?: string;
+  'Profile Summary'?: string;
+  profile_summary?: string;
+  'Pain Points'?: string;
+  pain_points?: string;
+}
+
+const UploadContactsModal = ({ campaignId, onClose, onSuccess }: UploadContactsModalProps) => {
   const [csvText, setCsvText] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleUpload = async () => {
+    if (!csvText.trim()) {
+      setError('Please paste CSV data');
+      return;
+    }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      setCsvText(text);
-    };
-    reader.readAsText(file);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+    setLoading(true);
     setError('');
 
     try {
-      const lines = csvText.trim().split('\n');
-      if (lines.length < 2) {
-        setError('CSV must have at least a header row and one data row');
-        return;
-      }
-
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      
-      const requiredFields = ['name', 'phone'];
-      const missingFields = requiredFields.filter(field => !headers.includes(field));
-      if (missingFields.length > 0) {
-        setError(`Missing required fields: ${missingFields.join(', ')}`);
-        return;
-      }
-
-      const contacts = lines.slice(1).map(line => {
-        const values = line.split(',').map(v => v.trim());
-        const contactData: Record<string, string> = {};
-        
-        headers.forEach((header, index) => {
-          contactData[header] = values[index] || '';
-        });
-
-        const painPoints = contactData.painpoints || contactData['pain points'] || '';
-        const painPointsArray = painPoints ? painPoints.split(';').map(p => p.trim()) : [];
-
-        return {
-          name: contactData.name,
-          phone: contactData.phone,
-          company: contactData.company || '',
-          email: contactData.email || '',
-          profile_summary: contactData.profilesummary || contactData['profile summary'] || '',
-          pain_points: painPointsArray,
-          status: 'pending' as const,
-          campaign_id: campaignId,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
+      // Parse CSV
+      const result = Papa.parse<CSVRow>(csvText, {
+        header: true,
+        skipEmptyLines: true
       });
 
-      addContacts(contacts, campaignId);
+      if (result.errors.length > 0) {
+        setError('Invalid CSV format');
+        return;
+      }
+
+      const contacts = result.data.map((row: CSVRow) => ({
+        name: row.Name || row.name || '',
+        phone: row.Phone || row.phone || '',
+        email: row.Email || row.email || '',
+        company: row.Company || row.company || '',
+        profile_summary: row['Profile Summary'] || row.profile_summary || null,
+        pain_points: row['Pain Points'] ? row['Pain Points'].split(';').map((p: string) => p.trim()) : []
+      }));
+
+      // Insert contacts into database
+      const { data: insertedContacts, error: insertError } = await supabase
+        .from('contacts')
+        .insert(contacts)
+        .select();
+
+      if (insertError) throw insertError;
+
+      // Link contacts to campaign
+      if (insertedContacts) {
+        const campaignContacts = insertedContacts.map(contact => ({
+          campaign_id: campaignId,
+          contact_id: contact.id,
+          status: 'pending'
+        }));
+
+        const { error: linkError } = await supabase
+          .from('campaign_contacts')
+          .insert(campaignContacts);
+
+        if (linkError) throw linkError;
+      }
+
+      onSuccess?.();
       onClose();
     } catch (err) {
-      console.error('CSV parsing error:', err);
-      setError('Failed to parse CSV. Please check the format.');
+      console.error('Error uploading contacts:', err);
+      setError(err instanceof Error ? err.message : 'Failed to upload contacts');
+    } finally {
+      setLoading(false);
     }
-  };
-
-  const downloadTemplate = () => {
-    const template = 'name,phone,company,email,profileSummary,painPoints\nJohn Doe,555-1234,Acme Corp,john@acme.com,VP of Sales,slow support;high costs\nJane Smith,555-5678,Tech Inc,jane@tech.com,CTO,downtime issues;poor integration';
-    const blob = new Blob([template], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'contact-template.csv';
-    a.click();
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+      <div className="bg-white rounded-xl max-w-2xl w-full p-6">
+        <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-semibold text-gray-900">Upload Contacts</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X className="w-6 h-6" />
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6">
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <label className="block text-sm font-medium text-gray-700">
-                Upload CSV File
-              </label>
-              <button
-                type="button"
-                onClick={downloadTemplate}
-                className="text-sm text-primary hover:underline"
-              >
-                Download Template
-              </button>
-            </div>
-            
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileUpload}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Paste CSV Data
+            </label>
+            <textarea
+              value={csvText}
+              onChange={(e) => setCsvText(e.target.value)}
+              placeholder="Name,Phone,Email,Company,Profile Summary,Pain Points&#10;John Doe,555-0100,john@example.com,Acme Inc,CEO of startup,Manual processes;High costs"
+              className="w-full h-64 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent font-mono text-sm"
             />
-            
-            <p className="mt-2 text-xs text-gray-500">
-              Required columns: name, phone. Optional: company, email, profileSummary, painPoints (use semicolon to separate multiple pain points)
+            <p className="text-xs text-gray-500 mt-2">
+              Expected columns: Name, Phone, Email, Company, Profile Summary, Pain Points (semicolon-separated)
             </p>
           </div>
 
-          {csvText && (
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                CSV Preview
-              </label>
-              <textarea
-                value={csvText.split('\n').slice(0, 6).join('\n')}
-                readOnly
-                rows={6}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-sm font-mono"
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Showing first 5 rows
-              </p>
-            </div>
-          )}
-
           {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-red-800">Error</p>
-                <p className="text-sm text-red-600 mt-1">{error}</p>
-              </div>
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+              {error}
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200">
+          <div className="flex gap-3">
             <button
-              type="button"
+              onClick={handleUpload}
+              disabled={loading}
+              className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Uploading...' : 'Upload Contacts'}
+            </button>
+            <button
               onClick={onClose}
-              className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={!csvText}
-              className="flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Upload className="w-4 h-4" />
-              Upload Contacts
-            </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
