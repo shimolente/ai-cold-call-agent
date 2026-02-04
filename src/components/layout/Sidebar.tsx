@@ -1,4 +1,4 @@
-import { Phone, Users, Lightbulb, BarChart3 } from 'lucide-react';
+import { Phone, Users, Lightbulb, BarChart3, TrendingUp } from 'lucide-react';
 
 interface SidebarProps {
   currentPage: string;
@@ -10,7 +10,9 @@ const Sidebar = ({ currentPage, onNavigate }: SidebarProps) => {
     { id: 'overview', icon: BarChart3, label: 'Overview' },
     { id: 'campaigns', icon: Phone, label: 'Campaigns' },
     { id: 'contacts', icon: Users, label: 'Contacts' },
-    { id: 'usps', icon: Lightbulb, label: 'USP Library' }
+    { id: 'usps', icon: Lightbulb, label: 'USP Library' },
+    { id: 'reports', label: 'Reports', path: 'reports', icon: TrendingUp }
+
   ];
 
   return (

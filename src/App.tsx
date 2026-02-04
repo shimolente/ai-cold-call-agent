@@ -6,6 +6,8 @@ import CreateCampaignPage from './pages/CreateCampaignPage';
 import CampaignDetailPage from './pages/CampaignDetailPage';
 import ContactsPage from './pages/ContactsPage';
 import USPLibraryPage from './pages/USPLibraryPage';
+import ReportsPage from './pages/ReportsPage';
+
 
 function App() {
   return (
@@ -19,6 +21,7 @@ function App() {
           <Route path="campaigns/:id" element={<CampaignDetailPage />} />
           <Route path="contacts" element={<ContactsPage />} />
           <Route path="usps" element={<USPLibraryPage />} />
+          <Route path="reports" element={<ReportsPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
