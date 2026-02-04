@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Download, TrendingUp, TrendingDown, Phone, Target, Clock, Users } from 'lucide-react';
+import { Calendar, Download, TrendingUp, TrendingDown, Phone, Target, Clock, Users, Eye, EyeOff, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Line, ComposedChart } from 'recharts';
 
 type Granularity = 'daily' | 'weekly' | 'monthly' | 'quarterly';
 type PeriodPreset = 'today' | 'yesterday' | 'last_7_days' | 'last_30_days' | 'last_90_days' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year' | 'all_time' | 'custom';
@@ -39,6 +39,25 @@ interface KPIData {
   };
 }
 
+interface VisibleMetrics {
+  // Volume metrics
+  totalCalls: boolean;
+  // Intent metrics
+  positive: boolean;
+  negative: boolean;
+  followUp: boolean;
+  // Outcome metrics
+  qualified: boolean;
+  meetingScheduled: boolean;
+  noAnswer: boolean;
+  notInterested: boolean;
+  badTiming: boolean;
+  // Performance metrics
+  positiveRate: boolean;
+  avgDuration: boolean;
+  connectionRate: boolean;
+}
+
 const ReportsPage = () => {
   const [timeConfig, setTimeConfig] = useState<TimeConfig>({
     granularity: 'daily',
@@ -53,6 +72,7 @@ const ReportsPage = () => {
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [kpiData, setKPIData] = useState<KPIData>({
     totalCalls: 0,
     positiveRate: 0,
@@ -60,6 +80,27 @@ const ReportsPage = () => {
     conversionRate: 0,
     trend: { calls: 0, positive: 0, duration: 0, conversion: 0 }
   });
+
+  const [visibleMetrics, setVisibleMetrics] = useState<VisibleMetrics>({
+    // Volume metrics
+    totalCalls: true,
+    // Intent metrics
+    positive: true,
+    negative: false,
+    followUp: false,
+    // Outcome metrics
+    qualified: false,
+    meetingScheduled: false,
+    noAnswer: false,
+    notInterested: false,
+    badTiming: false,
+    // Performance metrics
+    positiveRate: true,
+    avgDuration: false,
+    connectionRate: false
+  });
+
+  const [showMetricsMenu, setShowMetricsMenu] = useState(false);
 
   const periodOptions = [
     { label: 'Today', value: 'today' },
@@ -83,15 +124,19 @@ const ReportsPage = () => {
     fetchData();
   }, [timeConfig.startDate, timeConfig.endDate]);
 
-  const fetchData = async () => {
+  const fetchData = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
 
       const { data, error } = await supabase
         .from('call_logs')
         .select('*')
         .gte('call_date', timeConfig.startDate)
-        .lte('call_date', timeConfig.endDate)
+        .lte('call_date', timeConfig.endDate + 'T23:59:59')
         .order('call_date', { ascending: true });
 
       if (error) throw error;
@@ -102,7 +147,12 @@ const ReportsPage = () => {
       console.error('Error fetching data:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = () => {
+    fetchData(true);
   };
 
   const calculateKPIs = (logs: CallLog[]) => {
@@ -110,9 +160,8 @@ const ReportsPage = () => {
     const positiveCalls = logs.filter(l => l.intent_label === 'positive').length;
     const positiveRate = totalCalls > 0 ? (positiveCalls / totalCalls) * 100 : 0;
     const avgDuration = totalCalls > 0 ? logs.reduce((sum, l) => sum + l.duration, 0) / totalCalls : 0;
-    const conversionRate = positiveCalls > 0 ? (positiveCalls * 0.35) : 0; // Mock conversion
+    const conversionRate = positiveCalls > 0 ? (positiveCalls * 0.35) : 0;
 
-    // Calculate trends (mock for now - would compare to previous period)
     setKPIData({
       totalCalls,
       positiveRate,
@@ -176,11 +225,35 @@ const ReportsPage = () => {
     setShowCustomDatePicker(false);
   };
 
+  const toggleMetric = (metric: keyof VisibleMetrics) => {
+    setVisibleMetrics(prev => ({
+      ...prev,
+      [metric]: !prev[metric]
+    }));
+  };
+
   // Prepare chart data based on granularity
   const getChartData = () => {
     if (callLogs.length === 0) return [];
 
-    const dataMap = new Map<string, { date: string; calls: number; positive: number; negative: number; followUp: number }>();
+    const dataMap = new Map<string, { 
+      date: string; 
+      calls: number; 
+      positive: number; 
+      negative: number; 
+      followUp: number;
+      qualified: number;
+      meetingScheduled: number;
+      noAnswer: number;
+      notInterested: number;
+      badTiming: number;
+      connected: number;
+      positiveRate: number;
+      avgDuration: number;
+      connectionRate: number;
+      totalDuration: number;
+      callCount: number;
+    }>();
 
     callLogs.forEach(log => {
       const date = new Date(log.call_date);
@@ -207,17 +280,57 @@ const ReportsPage = () => {
       }
 
       if (!dataMap.has(key)) {
-        dataMap.set(key, { date: key, calls: 0, positive: 0, negative: 0, followUp: 0 });
+        dataMap.set(key, { 
+          date: key, 
+          calls: 0, 
+          positive: 0, 
+          negative: 0, 
+          followUp: 0,
+          qualified: 0,
+          meetingScheduled: 0,
+          noAnswer: 0,
+          notInterested: 0,
+          badTiming: 0,
+          connected: 0,
+          positiveRate: 0,
+          avgDuration: 0,
+          connectionRate: 0,
+          totalDuration: 0,
+          callCount: 0
+        });
       }
 
       const entry = dataMap.get(key)!;
       entry.calls++;
+      entry.totalDuration += log.duration;
+      entry.callCount++;
+      
+      // Track intent
       if (log.intent_label === 'positive') entry.positive++;
       else if (log.intent_label === 'no-interest') entry.negative++;
       else if (log.intent_label === 'follow-up') entry.followUp++;
+      
+      // Track outcomes (would need outcome_status from campaign_contacts)
+      // For now, approximate from intent_label
+      if (log.intent_label === 'positive') {
+        entry.qualified++;
+        entry.connected++;
+      } else if (log.intent_label === 'no-interest') {
+        entry.notInterested++;
+        entry.connected++;
+      } else if (log.intent_label === 'follow-up') {
+        entry.badTiming++;
+        entry.connected++;
+      }
     });
 
-    return Array.from(dataMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+    // Calculate rates and averages
+    return Array.from(dataMap.values()).map(entry => ({
+      ...entry,
+      positiveRate: entry.calls > 0 ? (entry.positive / entry.calls) * 100 : 0,
+      connectionRate: entry.calls > 0 ? (entry.connected / entry.calls) * 100 : 0,
+      avgDuration: entry.callCount > 0 ? entry.totalDuration / entry.callCount / 60 : 0 // in minutes
+    })).sort((a, b) => a.date.localeCompare(b.date));
   };
 
   // Intent distribution data
@@ -267,11 +380,45 @@ const ReportsPage = () => {
     );
   };
 
+  const metricsConfig = [
+    // Volume Metrics
+    { key: 'totalCalls' as keyof VisibleMetrics, label: 'Total Calls', color: '#3b82f6', type: 'bar', group: 'Volume' },
+    
+    // Intent Metrics
+    { key: 'positive' as keyof VisibleMetrics, label: 'Positive Intent', color: '#10b981', type: 'bar', group: 'Intent' },
+    { key: 'negative' as keyof VisibleMetrics, label: 'No Interest', color: '#ef4444', type: 'bar', group: 'Intent' },
+    { key: 'followUp' as keyof VisibleMetrics, label: 'Follow-Up', color: '#f59e0b', type: 'bar', group: 'Intent' },
+    
+    // Outcome Metrics
+    { key: 'qualified' as keyof VisibleMetrics, label: 'Qualified', color: '#059669', type: 'bar', group: 'Outcomes' },
+    { key: 'meetingScheduled' as keyof VisibleMetrics, label: 'Meeting Scheduled', color: '#7c3aed', type: 'bar', group: 'Outcomes' },
+    { key: 'noAnswer' as keyof VisibleMetrics, label: 'No Answer', color: '#94a3b8', type: 'bar', group: 'Outcomes' },
+    { key: 'notInterested' as keyof VisibleMetrics, label: 'Not Interested', color: '#dc2626', type: 'bar', group: 'Outcomes' },
+    { key: 'badTiming' as keyof VisibleMetrics, label: 'Bad Timing', color: '#fb923c', type: 'bar', group: 'Outcomes' },
+    
+    // Performance Metrics
+    { key: 'positiveRate' as keyof VisibleMetrics, label: 'Positive Rate %', color: '#059669', type: 'line', group: 'Performance' },
+    { key: 'connectionRate' as keyof VisibleMetrics, label: 'Connection Rate %', color: '#0284c7', type: 'line', group: 'Performance' },
+    { key: 'avgDuration' as keyof VisibleMetrics, label: 'Avg Duration (min)', color: '#8b5cf6', type: 'line', group: 'Performance' }
+  ];
+
+  const activeMetricsCount = Object.values(visibleMetrics).filter(Boolean).length;
+
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-3xl font-semibold text-gray-900 mb-2">Reports & Analytics</h1>
-        <p className="text-gray-600">Track your campaign performance and insights</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold text-gray-900 mb-2">Reports & Analytics</h1>
+          <p className="text-gray-600">Track your campaign performance and insights</p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? 'Refreshing...' : 'Refresh'}
+        </button>
       </div>
 
       {/* Time Configuration */}
@@ -406,58 +553,173 @@ const ReportsPage = () => {
 
           {/* Performance Over Time */}
           <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Performance Over Time</h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Area type="monotone" dataKey="calls" stackId="1" stroke="#3b82f6" fill="#3b82f6" name="Total Calls" />
-                <Area type="monotone" dataKey="positive" stackId="2" stroke="#10b981" fill="#10b981" name="Positive" />
-                <Area type="monotone" dataKey="followUp" stackId="2" stroke="#f59e0b" fill="#f59e0b" name="Follow-Up" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Performance Over Time</h2>
+              
+              {/* Metrics Toggle */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowMetricsMenu(!showMetricsMenu)}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span className="text-sm">Metrics ({activeMetricsCount})</span>
+                </button>
+
+                {showMetricsMenu && (
+                  <>
+                    <div 
+                      className="fixed inset-0 z-10" 
+                      onClick={() => setShowMetricsMenu(false)}
+                    />
+                    <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20 max-h-96 overflow-y-auto">
+                      <div className="px-4 py-2 border-b border-gray-200">
+                        <p className="text-xs font-medium text-gray-500 uppercase">Select Metrics to Display</p>
+                      </div>
+                      
+                      {/* Group metrics by category */}
+                      {['Volume', 'Intent', 'Outcomes', 'Performance'].map(group => {
+                        const groupMetrics = metricsConfig.filter(m => m.group === group);
+                        return (
+                          <div key={group}>
+                            <div className="px-4 py-2 bg-gray-50">
+                              <p className="text-xs font-semibold text-gray-700">{group}</p>
+                            </div>
+                            {groupMetrics.map(metric => (
+                              <label
+                                key={metric.key}
+                                className="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={visibleMetrics[metric.key]}
+                                  onChange={() => toggleMetric(metric.key)}
+                                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                />
+                                <div className="flex items-center gap-2 flex-1">
+                                  <div 
+                                    className="w-3 h-3 rounded-full" 
+                                    style={{ backgroundColor: metric.color }}
+                                  />
+                                  <span className="text-sm text-gray-700">{metric.label}</span>
+                                </div>
+                                {visibleMetrics[metric.key] ? (
+                                  <Eye className="w-4 h-4 text-gray-400" />
+                                ) : (
+                                  <EyeOff className="w-4 h-4 text-gray-400" />
+                                )}
+                              </label>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {activeMetricsCount === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <Eye className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p>Select at least one metric to display</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={350}>
+                <ComposedChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis yAxisId="left" />
+                  <YAxis yAxisId="right" orientation="right" />
+                  <Tooltip />
+                  <Legend />
+                  
+                  {visibleMetrics.totalCalls && (
+                    <Bar yAxisId="left" dataKey="calls" fill="#3b82f6" name="Total Calls" />
+                  )}
+                  {visibleMetrics.positive && (
+                    <Bar yAxisId="left" dataKey="positive" fill="#10b981" name="Positive Intent" />
+                  )}
+                  {visibleMetrics.negative && (
+                    <Bar yAxisId="left" dataKey="negative" fill="#ef4444" name="No Interest" />
+                  )}
+                  {visibleMetrics.followUp && (
+                    <Bar yAxisId="left" dataKey="followUp" fill="#f59e0b" name="Follow-Up" />
+                  )}
+                  {visibleMetrics.qualified && (
+                    <Bar yAxisId="left" dataKey="qualified" fill="#059669" name="Qualified" />
+                  )}
+                  {visibleMetrics.meetingScheduled && (
+                    <Bar yAxisId="left" dataKey="meetingScheduled" fill="#7c3aed" name="Meeting Scheduled" />
+                  )}
+                  {visibleMetrics.noAnswer && (
+                    <Bar yAxisId="left" dataKey="noAnswer" fill="#94a3b8" name="No Answer" />
+                  )}
+                  {visibleMetrics.notInterested && (
+                    <Bar yAxisId="left" dataKey="notInterested" fill="#dc2626" name="Not Interested" />
+                  )}
+                  {visibleMetrics.badTiming && (
+                    <Bar yAxisId="left" dataKey="badTiming" fill="#fb923c" name="Bad Timing" />
+                  )}
+                  {visibleMetrics.positiveRate && (
+                    <Line yAxisId="right" type="monotone" dataKey="positiveRate" stroke="#059669" strokeWidth={2} name="Positive Rate %" dot={{ r: 4 }} />
+                  )}
+                  {visibleMetrics.connectionRate && (
+                    <Line yAxisId="right" type="monotone" dataKey="connectionRate" stroke="#0284c7" strokeWidth={2} name="Connection Rate %" dot={{ r: 4 }} />
+                  )}
+                  {visibleMetrics.avgDuration && (
+                    <Line yAxisId="right" type="monotone" dataKey="avgDuration" stroke="#8b5cf6" strokeWidth={2} name="Avg Duration (min)" dot={{ r: 4 }} />
+                  )}
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
             {/* Intent Distribution */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Intent Distribution</h2>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={intentData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {intentData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              {intentData.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">No data available</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={intentData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {intentData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </div>
 
             {/* Pain Points Analysis */}
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Top Pain Points</h2>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={painPointsData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#f59e0b" />
-                </BarChart>
-              </ResponsiveContainer>
+              {painPointsData.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">No pain points data</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={painPointsData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="#f59e0b" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
