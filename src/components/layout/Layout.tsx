@@ -11,6 +11,7 @@ const Layout = () => {
     if (path.startsWith('/contacts')) return 'contacts';
     if (path.startsWith('/usps')) return 'usps';
     if (path.startsWith('/overview')) return 'overview';
+    if (path.startsWith('/reports')) return 'reports';
     return 'overview';
   };
 

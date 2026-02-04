@@ -11,7 +11,7 @@ const Sidebar = ({ currentPage, onNavigate }: SidebarProps) => {
     { id: 'campaigns', icon: Phone, label: 'Campaigns' },
     { id: 'contacts', icon: Users, label: 'Contacts' },
     { id: 'usps', icon: Lightbulb, label: 'USP Library' },
-    { id: 'reports', label: 'Reports', path: 'reports', icon: TrendingUp }
+    { id: 'reports', label: 'Reports', icon: TrendingUp }
 
   ];
 

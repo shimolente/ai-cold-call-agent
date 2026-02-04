@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Download, TrendingUp, TrendingDown, Phone, Target, Clock, Users } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts';
 
 type Granularity = 'daily' | 'weekly' | 'monthly' | 'quarterly';
 type PeriodPreset = 'today' | 'yesterday' | 'last_7_days' | 'last_30_days' | 'last_90_days' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'last_year' | 'all_time' | 'custom';
@@ -136,10 +136,11 @@ const ReportsPage = () => {
       case 'today':
         startDate = endDate;
         break;
-      case 'yesterday':
+      case 'yesterday': {
         const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         startDate = endDate = yesterday.toISOString().split('T')[0];
         break;
+      }
       case 'last_7_days':
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         break;
@@ -149,11 +150,12 @@ const ReportsPage = () => {
       case 'last_90_days':
         startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         break;
-      case 'this_week':
+      case 'this_week': {
         const dayOfWeek = now.getDay();
         const monday = new Date(now.getTime() - (dayOfWeek - 1) * 24 * 60 * 60 * 1000);
         startDate = monday.toISOString().split('T')[0];
         break;
+      }
       case 'this_month':
         startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
         break;
@@ -188,18 +190,20 @@ const ReportsPage = () => {
         case 'daily':
           key = date.toISOString().split('T')[0];
           break;
-        case 'weekly':
+        case 'weekly': {
           const weekStart = new Date(date);
           weekStart.setDate(date.getDate() - date.getDay() + 1);
           key = weekStart.toISOString().split('T')[0];
           break;
+        }
         case 'monthly':
           key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
           break;
-        case 'quarterly':
+        case 'quarterly': {
           const quarter = Math.floor(date.getMonth() / 3) + 1;
           key = `${date.getFullYear()}-Q${quarter}`;
           break;
+        }
       }
 
       if (!dataMap.has(key)) {
@@ -428,7 +432,7 @@ const ReportsPage = () => {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
